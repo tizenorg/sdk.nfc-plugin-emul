@@ -1,0 +1,4 @@
+@PREFIX@/lib/*.so
+#@PREFIX@/bin/*
+#@PREFIX@/share/dbus-1/services/*
+
