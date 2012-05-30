@@ -5,6 +5,7 @@ Release:    1
 Group:      emulator
 License:    Apache-2.0
 Source0:    nfc-plugin-emul-%{version}.tar.gz
+Source1001: packaging/nfc-plugin-emul.manifest 
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 BuildRequires:  pkgconfig(aul)
@@ -34,6 +35,7 @@ NFC Plugin for Emulator.
 %setup -q 
 
 %build
+cp %{SOURCE1001} .
 cmake . -DCMAKE_INSTALL_PREFIX=/usr
 make %{?jobs:-j%jobs}
 
@@ -47,5 +49,6 @@ rm -rf %{buildroot}
 %postun -p /sbin/ldconfig
 
 %files
+%manifest nfc-plugin-emul.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so
