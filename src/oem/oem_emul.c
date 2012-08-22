@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011 Samsung Electronics Co., Ltd All Rights Reserved
+* Copyright (c) 2012 Samsung Electronics Co., Ltd All Rights Reserved
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -231,6 +231,7 @@ static bool net_nfc_emul_controller_init (net_nfc_error_e* result);
 static bool net_nfc_emul_controller_deinit (void);
 static bool net_nfc_emul_controller_register_listener(target_detection_listener_cb target_detection_listener,se_transaction_listener_cb se_transaction_listener, llcp_event_listener_cb llcp_event_listener, net_nfc_error_e* result);
 static bool net_nfc_emul_controller_unregister_listener();
+static bool net_nfc_emul_controller_get_firmware_version(data_s **data, net_nfc_error_e *result);
 static bool net_nfc_emul_controller_check_firmware_version(net_nfc_error_e* result);
 static bool net_nfc_emul_controller_update_firmware(net_nfc_error_e* result);
 static bool net_nfc_emul_controller_get_stack_information(net_nfc_stack_information_s* stack_info, net_nfc_error_e* result);
@@ -267,6 +268,8 @@ static bool net_nfc_emul_controller_llcp_recv_from(net_nfc_target_handle_s* hand
 static bool net_nfc_emul_controller_llcp_send_to(net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t	socket, data_s* data, uint8_t service_access_point, net_nfc_error_e* result, void * user_param);
 static bool net_nfc_emul_controller_llcp_get_remote_config (net_nfc_target_handle_s* handle, net_nfc_llcp_config_info_s *config, net_nfc_error_e* result);
 static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t socket, net_nfc_llcp_socket_option_s * option, net_nfc_error_e* result);
+
+static bool net_nfc_emul_controller_support_nfc(net_nfc_error_e *result);
 
 /***************************	INTERFACE END	***************************************/
 
@@ -413,6 +416,7 @@ NET_NFC_EXPORT_API bool onload(net_nfc_oem_interface_s* emul_interfaces)
 	emul_interfaces->deinit = net_nfc_emul_controller_deinit;
 	emul_interfaces->register_listener = net_nfc_emul_controller_register_listener;
 	emul_interfaces->unregister_listener = net_nfc_emul_controller_unregister_listener;
+	emul_interfaces->get_firmware_version = net_nfc_emul_controller_get_firmware_version;
 	emul_interfaces->check_firmware_version = net_nfc_emul_controller_check_firmware_version;
 	emul_interfaces->update_firmeware = net_nfc_emul_controller_update_firmware;
 	emul_interfaces->get_stack_information = net_nfc_emul_controller_get_stack_information;
@@ -449,6 +453,8 @@ NET_NFC_EXPORT_API bool onload(net_nfc_oem_interface_s* emul_interfaces)
 	emul_interfaces->reject_llcp = net_nfc_emul_controller_llcp_reject;
 	emul_interfaces->get_remote_config = net_nfc_emul_controller_llcp_get_remote_config;
 	emul_interfaces->get_remote_socket_info = net_nfc_emul_controller_llcp_get_remote_socket_info;
+
+	emul_interfaces->support_nfc = net_nfc_emul_controller_support_nfc;
 
 	DEBUG_EMUL_END();
 
@@ -663,11 +669,12 @@ static bool _net_nfc_set_emulMsg(uint8_t * emulData, long int messageSize)
 	return true;
 }
 
-static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, int record_count)
+static int _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, int record_count)
 {
 	DEBUG_EMUL_BEGIN();
 
 	int index;
+	int create_record_count = 0;
 	char emulMsg[BUFFER_LENGTH_MAX] = { 0, };
 
 	memcpy(emulMsg, gSdkMsg.file_data, strlen((char*)gSdkMsg.file_data));
@@ -679,10 +686,8 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 		char *record_id;
 		char *record_payload;
 
-		emulMsg_data_s record;
+		emulMsg_data_s record = { 0, };
 		data_s filePayload;
-
-		memset(&record, 0x00, sizeof(emulMsg_data_s));
 
 		/* parse string */
 		if (index == 0)
@@ -707,6 +712,8 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 		record.tnf = _net_nfc_get_tnf_type(atoi(name_format));
 
 		if (strcmp(type_name, "Null")) {
+			DEBUG_MSG("Data : type_name ");
+
 			record.typeName.length = strlen(type_name);
 			_nfc_emul_util_alloc_mem(record.typeName.buffer, record.typeName.length);
 
@@ -718,6 +725,8 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 		}
 
 		if (strcmp(record_id, "Null")) {
+			DEBUG_MSG("Data : record_id ");
+
 			record.id.length = strlen(record_id);
 			_nfc_emul_util_alloc_mem(record.id.buffer, record.id.length);
 
@@ -729,6 +738,8 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 		}
 
 		if (strcmp(record_payload, "Null")) {
+			DEBUG_MSG("Data : record_payload ");
+
 			record.payload.length = strlen(record_payload);
 			_nfc_emul_util_alloc_mem(record.payload.buffer, record.payload.length);
 
@@ -753,27 +764,83 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 		net_nfc_error_e result = NET_NFC_OK;
 
 		if (record.tnf == NET_NFC_RECORD_EMPTY) {
-			/* type_name, record_id and record_payload are NULL : I will discard it */
-			goto ERROR;
+			if((result = net_nfc_util_create_record(NET_NFC_RECORD_EMPTY, &record.typeName, &record.id, &record.payload, (ndef_record_s **) &new_record)) != NET_NFC_OK) {
+				DEBUG_MSG("net_nfc_create_record failed[%d]", result);
+				goto ERROR;;
+			}
 		}
 		else if (record.tnf == NET_NFC_RECORD_UNKNOWN) {
-			/* type_name is NULL : : I will discard it */
-			goto ERROR;
+			if((result = net_nfc_util_create_record(NET_NFC_RECORD_UNKNOWN, &record.typeName, &record.id, &record.payload, (ndef_record_s **) &new_record)) != NET_NFC_OK) {
+				DEBUG_MSG("net_nfc_create_record failed[%d]", result);
+				goto ERROR;;
+			}
 		}
 		else if ((record.tnf == NET_NFC_RECORD_WELL_KNOWN_TYPE)) {
 			if (!strncmp((char *)record.typeName.buffer, "U", 1)) {
 				DEBUG_MSG("URI Type ");
-				if(net_nfc_util_create_uri_type_record ((const char *)record_payload, NET_NFC_SCHEMA_FULL_URI, (ndef_record_s**) &new_record) != NET_NFC_OK){
-					DEBUG_ERR_MSG("net_nfc_util_create_uri_type_record is failed");
+
+				data_s payload_data = { NULL, 0 };
+
+				if (record.payload.buffer != NULL )
+				{
+					payload_data.length = strlen((char *)record_payload) + 1;
+
+					_nfc_emul_util_alloc_mem(payload_data.buffer, payload_data.length);
+					if (payload_data.buffer == NULL)
+					{
+						DEBUG_MSG("_nfc_emul_util_alloc_mem failed");
+						goto ERROR;
+					}
+
+					payload_data.buffer[0] = NET_NFC_SCHEMA_FULL_URI;	/* first byte of payload is protocol scheme */
+					memcpy(payload_data.buffer + 1, record.payload.buffer, payload_data.length - 1);
+				}
+
+				if (net_nfc_util_create_record(record.tnf, &record.typeName, &record.id, &payload_data, (ndef_record_s**) &new_record) != NET_NFC_OK){
+					DEBUG_ERR_MSG("net_nfc_util_create_record is failed");
 					goto ERROR;
 				}
+
+				if (payload_data.buffer != NULL )
+					_nfc_emul_util_free_mem(payload_data.buffer);
 			}
 			else if (!strncmp((char *)record.typeName.buffer, "T", 1)) {
 				DEBUG_MSG("TEXT Type ");
-				if(net_nfc_util_create_text_type_record((const char *)record_payload, "en-US", NET_NFC_ENCODE_UTF_8, (ndef_record_s**) &new_record) != NET_NFC_OK) {
-					DEBUG_ERR_MSG("net_nfc_util_create_uri_type_record is failed");
+
+				data_s payload_data = { NULL, 0 };
+				int offset = 0;
+				int controll_byte;
+
+				if (record.payload.buffer != NULL )
+				{
+					payload_data.length = strlen((char *)record_payload) + strlen("en-US") + 1;
+
+					_nfc_emul_util_alloc_mem(payload_data.buffer, payload_data.length);
+					if (payload_data.buffer == NULL)
+					{
+						DEBUG_MSG("_nfc_emul_util_alloc_mem failed");
+						goto ERROR;
+					}
+
+					controll_byte = strlen("en-US") & 0x3F;
+
+					payload_data.buffer[0] = controll_byte;
+
+					offset = 1;
+					memcpy(payload_data.buffer + offset, "en-US", strlen("en-US"));
+
+					offset = offset + strlen("en-US");
+					memcpy(payload_data.buffer + offset, record.payload.buffer, strlen(record_payload));
+
+				}
+
+				if (net_nfc_util_create_record(record.tnf, &record.typeName, &record.id, &payload_data, (ndef_record_s**) &new_record) != NET_NFC_OK){
+					DEBUG_ERR_MSG("net_nfc_util_create_record is failed");
 					goto ERROR;
 				}
+
+				if (payload_data.buffer != NULL )
+					_nfc_emul_util_free_mem(payload_data.buffer);
 			}
 			else {
 				DEBUG_ERR_MSG("NET_NFC_RECORD_WELL_KNOWN_TYPE >> typeName is wrong");
@@ -781,7 +848,6 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 			}
 		}
 		else if ((record.tnf == NET_NFC_RECORD_MIME_TYPE)) {
-			/* to do */
 
 			FILE *file = NULL;
 
@@ -874,6 +940,8 @@ static void _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, 
 			goto ERROR;;
 		}
 
+		create_record_count++;
+		DEBUG_MSG("Create Record Sucess. Create Record Count[%d]", create_record_count);
 ERROR :
 		/* To Do : memory issue */
 #if 0
@@ -896,6 +964,8 @@ ERROR :
 	}
 
 	DEBUG_EMUL_END();
+
+	return create_record_count;
 }
 
 static bool _net_nfc_create_ndef_from_emulMsg(void)
@@ -926,7 +996,7 @@ static bool _net_nfc_create_ndef_from_emulMsg(void)
 	}
 
 	/* create records and append it to ndef_msg*/
-	_net_nfc_create_records_from_emulMsg((ndef_message_s **) &ndef_message, record_count);
+	gSdkMsg.record_count = _net_nfc_create_records_from_emulMsg((ndef_message_s **) &ndef_message, record_count);
 
 	/* convert ndef msg to raw data */
 	ndef_length = net_nfc_util_get_ndef_message_length ((ndef_message_s *) ndef_message);
@@ -1007,6 +1077,8 @@ static void _net_nfc_target_discovered_cb(void)
 
 	/* make handle */
 	net_nfc_target_handle_s* handle = NULL;
+	int length = 0;
+
 	__net_nfc_make_valid_target_handle (&handle);
 	if(handle == NULL) {
 		return;
@@ -1014,14 +1086,22 @@ static void _net_nfc_target_discovered_cb(void)
 
 	/* make msg */
 	net_nfc_request_target_detected_t* target_detected = NULL;
+	uint8_t device_info[] = { 0x03, 0x55, 0x49, 0x44, 0x07, 0x04, 0x93, 0xB7, 0xD9, 0x5B, 0x02, 0x80, \
+		0x08, 0x41, 0x50, 0x50, 0x5F, 0x44, 0x41, 0x54, 0x41, 0x00, 0x03, 0x53, 0x41, 0x4B, \
+		0x01, 0x00, 0x04, 0x41, 0x54, 0x51, 0x41, 0x02, 0x44, 0x00, 0x0D, 0x4D, 0x41, 0x58, \
+		0x5F, 0x44, 0x41, 0x54, 0x41, 0x5F, 0x52, 0x41, 0x54, 0x45, 0x01, 0x00, 0x08, 0x46, \
+		0x57, 0x49, 0x5F, 0x53, 0x46, 0x47, 0x54, 0x01, 0x03, 0x49, 0x44, 0x6D, 0x07, 0x04, \
+		0x93, 0xB7, 0xD9, 0x5B, 0x02, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-	_nfc_emul_util_alloc_mem(target_detected, sizeof(net_nfc_request_target_detected_t));
+
+	length = sizeof(net_nfc_request_target_detected_t) + sizeof(device_info);
+	_nfc_emul_util_alloc_mem(target_detected, length);
 	if (target_detected == NULL)
 	{
 		return;
 	}
 
-	target_detected->length = sizeof(net_nfc_request_target_detected_t);
+	target_detected->length = length;
 	target_detected->request_type = NET_NFC_MESSAGE_SERVICE_STANDALONE_TARGET_DETECTED;
 	target_detected->handle = handle;
 
@@ -1048,6 +1128,10 @@ static void _net_nfc_target_discovered_cb(void)
 		DEBUG_MSG("set tag connection");
 		handle->connection_type = NET_NFC_TAG_CONNECTION;
 	}
+
+	target_detected->number_of_keys = 7;
+	target_detected->target_info_values.length = sizeof(device_info);
+	memcpy(&target_detected->target_info_values.buffer, device_info, target_detected->target_info_values.length);
 
 	/* call target_cb */
 	if(g_emul_controller_target_cb != NULL) {
@@ -1754,6 +1838,28 @@ static bool net_nfc_emul_controller_unregister_listener()
 	g_emul_controller_target_cb = NULL;
 	g_emul_controller_se_cb = NULL;
 	g_emul_controller_llcp_cb = NULL;
+
+	DEBUG_EMUL_END();
+
+	return true;
+}
+
+static bool net_nfc_emul_controller_get_firmware_version(data_s **data, net_nfc_error_e *result)
+{
+	if (data == NULL || result == NULL)
+	{
+		return false;
+	}
+
+	*result = NET_NFC_OK;
+
+	DEBUG_EMUL_BEGIN();
+
+	*data = (data_s *)calloc(1, sizeof(data_s));
+	(*data)->length = 10;
+	(*data)->buffer = (uint8_t *)calloc(1, (*data)->length);
+
+	snprintf((char *)(*data)->buffer, (*data)->length, "%d.%d", 1, 0);
 
 	DEBUG_EMUL_END();
 
@@ -3041,6 +3147,30 @@ static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_
 	DEBUG_EMUL_END();
 
 	return true;
+}
+
+
+static bool net_nfc_emul_controller_support_nfc(net_nfc_error_e *result)
+{
+	bool ret = false;
+	struct stat st = { 0, };
+
+	if (result == NULL)
+	{
+		return ret;
+	}
+
+	if (stat("/opt/nfc/sdkMsg", &st) == 0)
+	{
+		*result = NET_NFC_OK;
+		ret = true;
+	}
+	else
+	{
+		*result = NET_NFC_NOT_SUPPORTED;
+	}
+
+	return ret;
 }
 
 ////////////// INTERFACE END //////////
