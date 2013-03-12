@@ -1,0 +1,24 @@
+Source: nfc-plugin-emul
+Section: libs
+Priority: extra
+Maintainer: Junyong Sim <junyong.sim@samsung.com>
+Build-Depends: debhelper (>= 5), libaul-1-dev, syspopup-caller-dev, libglib2.0-dev, libecore-dev, libvconf-dev, libelm-dev, libmm-common-dev, libmm-sound-dev, libsecurity-server-client-dev, libcontacts-service-dev, libcontacts-service-dev, libbluetooth-frwk-dev,libdbus-glib-1-dev, dlog-dev, libslp-memo-dev, syspopup-caller-dev, libnfc-common-lib-dev
+Standards-Version: 0.0.1
+
+Package: libnfc-plugin-emul-0
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: NFC Plugin for Emulator
+
+Package: libnfc-plugin-emul-dev
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libnfc-plugin-emul-0 (= ${Source-Version})
+Description: NFC Plugin for Emulator (stripped)
+
+Package: libnfc-plugin-emul-dbg
+Section: debug
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libnfc-plugin-emul-0 (= ${Source-Version}) 
+Description: NFC Plugin for Emulator (unstripped)
