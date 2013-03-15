@@ -2236,24 +2236,69 @@ static bool net_nfc_emul_controller_write_ndef(net_nfc_target_handle_s* handle, 
 }
 
 
-static bool net_nfc_emul_controller_transceive (net_nfc_target_handle_s* handle, net_nfc_transceive_info_s* info, data_s** data, net_nfc_error_e* result)
+static bool net_nfc_emul_controller_transceive(net_nfc_target_handle_s *handle,
+	net_nfc_transceive_info_s *info, data_s **data, net_nfc_error_e *result)
 {
+	bool ret = false;
+
 	if (result == NULL) {
-		return false;
+		return ret;
+	}
+
+	if (info == NULL || info->trans_data.buffer == NULL ||
+		info->trans_data.length == 0) {
+		*result = NET_NFC_INVALID_PARAM;
+		return ret;
 	}
 
 	*result = NET_NFC_OK;
+	*data = NULL;
 
 	if (!__net_nfc_is_valide_target_handle(handle)) {
 		*result = NET_NFC_INVALID_HANDLE;
-		return false;
+		return ret;
 	}
 
 	DEBUG_EMUL_BEGIN();
 
+	if (info->dev_type == NET_NFC_MIFARE_DESFIRE_PICC) {
+		DEBUG_MSG("NET_NFC_MIFARE_DESFIRE_PICC");
+
+		/* check ISO-DEP formatable in DesFire */
+		if (info->trans_data.buffer[0] == (uint8_t)0x90 &&
+			info->trans_data.buffer[1] == (uint8_t)0x60) {
+
+			data_s *temp;
+
+			_net_nfc_util_alloc_mem(temp, sizeof(data_s));
+			if (temp != NULL) {
+				temp->length = 9;
+
+				_net_nfc_util_alloc_mem(temp->buffer, temp->length);
+				if (temp->buffer != NULL) {
+					temp->buffer[7] = (uint8_t)0x91;
+					temp->buffer[8] = (uint8_t)0xAF;
+
+					*data = temp;
+					ret = true;
+				} else {
+					*result = NET_NFC_ALLOC_FAIL;
+					_net_nfc_util_free_mem(temp);
+				}
+			} else {
+				*result = NET_NFC_ALLOC_FAIL;
+			}
+		} else {
+			*result = NET_NFC_NOT_SUPPORTED;
+		}
+
+	} else {
+		*result = NET_NFC_NOT_SUPPORTED;
+	}
+
 	DEBUG_EMUL_END();
 
-	return true;
+	return ret;
 }
 
 static bool net_nfc_emul_controller_format_ndef(net_nfc_target_handle_s* handle, data_s* secure_key, net_nfc_error_e* result)
