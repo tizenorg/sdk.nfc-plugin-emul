@@ -1021,6 +1021,7 @@ static bool _net_nfc_create_ndef_from_emulMsg(void)
 
 	}
 
+	net_nfc_util_free_ndef_message(ndef_message);
 	DEBUG_EMUL_END();
 
 	return retval;
