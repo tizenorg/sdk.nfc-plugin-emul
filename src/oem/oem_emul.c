@@ -1359,6 +1359,9 @@ static bool _net_nfc_make_llcp_data(void)
 		if (Snep_Server_msg.data->length <= SNEP_MAX_BUFFER) {
 			DEBUG_MSG("The snep msg size is small than SNEP_MAX_BUFFER >>>");
 
+			if (llcp_server_data == NULL)
+				return false;
+
 			llcp_server_data->length = Snep_Server_msg.data->length;
 			memcpy(llcp_server_data->buffer, Snep_Server_msg.data->buffer, Snep_Server_msg.data->length);
 		}
