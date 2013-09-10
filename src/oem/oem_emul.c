@@ -13,7 +13,7 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 */
-
+#define _GNU_SOURCE
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
@@ -166,7 +166,7 @@ typedef void * (*emul_Nfc_thread_handler_t)   (void * pParam);
 /******************************             DEFINE START	*******************************************/
 
 /* for emulator management */
-#define NET_NFC_EMUL_DATA_PATH				"/opt/nfc"
+#define NET_NFC_EMUL_DATA_PATH				"/opt/nfc/"
 #define NET_NFC_EMUL_MESSAGE_FILE_NAME		"sdkMsg"
 #define NET_NFC_EMUL_MSG_ID_SEPERATOR			"\n:"
 #define NET_NFC_EMUL_MSG_DATA_SEPERATOR		"\n\0"
@@ -1628,13 +1628,9 @@ static void emul_ReaderThread(void * pArg)
 
 	FILE *fp = NULL;
 	char file_name[1024] = { 0, };
-
-	char readBuffer[READ_BUFFER_LENGTH_MAX];
-
+	char *buf;
 	struct stat st;
-
 	time_t curTime;
-
 	bool condition = true;
 
 	/* make file name */
@@ -1677,14 +1673,13 @@ static void emul_ReaderThread(void * pArg)
 			}
 
 			/* read data */
-			memset(readBuffer, 0x00, READ_BUFFER_LENGTH_MAX);
+			if (fscanf(fp, "%a[^\n]", &buf)) {
+				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
 
-			if (fscanf(fp, "%[^\n]", readBuffer)) {
-				DEBUG_MSG("get DATA >>>> readBuffer [%s]", readBuffer);
+				/* process message */
+				_net_nfc_process_emulMsg((uint8_t *) buf, (long int) strlen(buf));
+				free(buf);
 			}
-
-			/* process message */
-			_net_nfc_process_emulMsg((uint8_t *) readBuffer, (long int) strlen(readBuffer));
 
 			fclose(fp);
 		}
@@ -1782,6 +1777,28 @@ static bool _net_nfc_emul_controller_create_interfaceFile (void)
 	return retval;
 }
 
+
+static void _read_last_msg()
+{
+	char *buf;
+
+	FILE *fp = fopen(NET_NFC_EMUL_DATA_PATH NET_NFC_EMUL_MESSAGE_FILE_NAME, "r");
+
+	if (fp)
+	{
+		if (fscanf(fp, "%a[^\n]", &buf)) {
+			DEBUG_MSG("get DATA >>>> buf [%s]", buf);
+
+			// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
+			if ('1' == buf[0] && '0' == buf[1] && ('0' == buf[2] || '2' == buf[2]))
+				_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
+			free(buf);
+		}
+
+		fclose(fp);
+	}
+}
+
 static bool net_nfc_emul_controller_init (net_nfc_error_e* result)
 {
 	bool ret = true;
@@ -1815,6 +1832,8 @@ static bool net_nfc_emul_controller_init (net_nfc_error_e* result)
 	DEBUG_MSG("Stack init finished");
 
 	g_stack_init_successful = true;
+
+	_read_last_msg();
 
 	DEBUG_EMUL_END();
 
