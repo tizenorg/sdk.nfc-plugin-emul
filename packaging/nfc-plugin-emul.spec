@@ -1,6 +1,6 @@
 Name:       nfc-plugin-emul
 Summary:    NFC emul plugin
-Version:    0.0.10
+Version:    0.0.11
 Release:    0
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0

@@ -1673,12 +1673,16 @@ static void emul_ReaderThread(void * pArg)
 			}
 
 			/* read data */
-			if (fscanf(fp, "%a[^\n]", &buf)) {
-				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
+			if (fscanf(fp, "%a[^\n]", &buf))
+			{
+				if (buf)
+				{
+					DEBUG_MSG("get DATA >>>> buf [%s]", buf);
 
-				/* process message */
-				_net_nfc_process_emulMsg((uint8_t *) buf, (long int) strlen(buf));
-				free(buf);
+					/* process message */
+					_net_nfc_process_emulMsg((uint8_t *) buf, (long int) strlen(buf));
+					free(buf);
+				}
 			}
 
 			fclose(fp);
@@ -1786,13 +1790,17 @@ static void _read_last_msg()
 
 	if (fp)
 	{
-		if (fscanf(fp, "%a[^\n]", &buf)) {
-			DEBUG_MSG("get DATA >>>> buf [%s]", buf);
+		if (fscanf(fp, "%a[^\n]", &buf))
+		{
+			if (buf)
+			{
+				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
 
-			// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
-			if ('1' == buf[0] && '0' == buf[1] && ('0' == buf[2] || '2' == buf[2]))
-				_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
-			free(buf);
+				// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
+				if ('1' == buf[0] && '0' == buf[1] && ('0' == buf[2] || '2' == buf[2]))
+					_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
+				free(buf);
+			}
 		}
 
 		fclose(fp);
