@@ -21,32 +21,24 @@ NFC Plugin Emul
 
 
 %build
-cmake . -DCMAKE_INSTALL_PREFIX=%{_prefix}
+%cmake .
 
-make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}/usr/share/license
+cp -af LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
+
 %make_install
 
 
-%postun
-/sbin/ldconfig
-rm -f build-stamp configure-stamp
-cd cmake_tmp
-rm -rf $(CMAKE_TMP_DIR)
-rm -rf CMakeCache.txt
-rm -rf CMakeFiles
-rm -rf cmake_install.cmake
-rm -rf Makefile
-rm -rf install_manifest.txt
-rm -rf *.so
+%post -p /sbin/ldconfig
 
-%post
 
+%postun -p /sbin/ldconfig
 
 
 %files
 %defattr(-,root,root,-)
 %{_libdir}/*.so
-
+/usr/share/license/%{name}
