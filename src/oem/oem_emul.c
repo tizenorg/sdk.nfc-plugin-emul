@@ -3240,6 +3240,9 @@ static bool net_nfc_emul_controller_llcp_get_remote_config (net_nfc_target_handl
 
 static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t socket, net_nfc_llcp_socket_option_s * option, net_nfc_error_e* result)
 {
+	/* In llcp specification ver 1.1, default miu size is 128 */
+	const uint16_t default_miu = 128;
+
 	if (result == NULL) {
 		return false;
 	}
@@ -3252,6 +3255,8 @@ static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_
 	}
 
 	DEBUG_EMUL_BEGIN();
+
+	option->miu = default_miu;
 
 	DEBUG_EMUL_END();
 
