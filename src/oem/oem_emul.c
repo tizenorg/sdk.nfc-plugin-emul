@@ -1630,15 +1630,12 @@ static void emul_ReaderThread(void * pArg)
 	char file_name[1024] = { 0, };
 	char *buf;
 	struct stat st;
-	time_t curTime;
+	time_t last_mtime = 0;
 	bool condition = true;
 
 	/* make file name */
 	snprintf(file_name, sizeof(file_name), "%s/%s", NET_NFC_EMUL_DATA_PATH, NET_NFC_EMUL_MESSAGE_FILE_NAME );
 	DEBUG_MSG("file path : %s", file_name);
-
-	time(&curTime);
-	DEBUG_MSG("Start Current Time [%ld]", (unsigned long) curTime);
 
 	/* polling 500 ms */
 
@@ -1647,46 +1644,54 @@ static void emul_ReaderThread(void * pArg)
 		usleep(500 * 1000);
 
 		/* open file */
-		if ((fp = fopen(file_name, "r")) == NULL) {
+		fp = fopen(file_name, "r");
+		if (NULL == fp)
+		{
 			DEBUG_MSG("file open error");
 			condition = false;
+			break;
 		}
-		else {
-			/* get the modified time of the file */
-			if (stat(file_name, &st) ==0) {
-				if ((unsigned long) st.st_mtime <= (unsigned long) curTime) {
-					fclose(fp);
-					continue;
-				}
-				else {
-					DEBUG_MSG("FILE Modified Time [%ld]", (unsigned long) st.st_mtime);
-					/* update current time */
-					time(&curTime);
-					DEBUG_MSG("Get New Current Time [%ld]", (unsigned long) curTime);
-				}
 
-			}
-			else {
-				DEBUG_MSG("stat error");
+		/* get the modified time of the file */
+		if (stat(file_name, &st) == 0) {
+			if (st.st_mtime == last_mtime) {
 				fclose(fp);
 				continue;
 			}
-
-			/* read data */
-			if (fscanf(fp, "%a[^\n]", &buf))
-			{
-				if (buf)
-				{
-					DEBUG_MSG("get DATA >>>> buf [%s]", buf);
-
-					/* process message */
-					_net_nfc_process_emulMsg((uint8_t *) buf, (long int) strlen(buf));
-					free(buf);
-				}
-			}
-
+		} else {
+			DEBUG_MSG("stat error");
 			fclose(fp);
+			continue;
 		}
+
+		/* read data */
+		if (fscanf(fp, "%a[^\n]", &buf))
+		{
+			if (buf)
+			{
+				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
+
+				if (last_mtime)
+				{
+					_net_nfc_process_emulMsg((uint8_t*) buf, (long int) strlen(buf));
+				}
+				else
+				{
+					// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
+					if ('1'==buf[0] && '0'==buf[1] && ('0'==buf[2] || '2'==buf[2]))
+						_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
+				}
+
+				/* process message */
+				free(buf);
+			}
+		}
+
+		DEBUG_MSG("FILE Modified Time [%ld]", (unsigned long) st.st_mtime);
+		DEBUG_MSG("Last FILE Modified Time [%ld]", (unsigned long) last_mtime);
+		last_mtime = st.st_mtime;
+
+		fclose(fp);
 
 		DEBUG_MSG("LOOP END >>>>");
 
@@ -1781,32 +1786,6 @@ static bool _net_nfc_emul_controller_create_interfaceFile (void)
 	return retval;
 }
 
-
-static void _read_last_msg()
-{
-	char *buf;
-
-	FILE *fp = fopen(NET_NFC_EMUL_DATA_PATH NET_NFC_EMUL_MESSAGE_FILE_NAME, "r");
-
-	if (fp)
-	{
-		if (fscanf(fp, "%a[^\n]", &buf))
-		{
-			if (buf)
-			{
-				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
-
-				// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
-				if ('1' == buf[0] && '0' == buf[1] && ('0' == buf[2] || '2' == buf[2]))
-					_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
-				free(buf);
-			}
-		}
-
-		fclose(fp);
-	}
-}
-
 static bool net_nfc_emul_controller_init (net_nfc_error_e* result)
 {
 	bool ret = true;
@@ -1840,8 +1819,6 @@ static bool net_nfc_emul_controller_init (net_nfc_error_e* result)
 	DEBUG_MSG("Stack init finished");
 
 	g_stack_init_successful = true;
-
-	_read_last_msg();
 
 	DEBUG_EMUL_END();
 
