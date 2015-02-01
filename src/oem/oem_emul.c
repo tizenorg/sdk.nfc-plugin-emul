@@ -13,7 +13,7 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 */
-#define _GNU_SOURCE
+
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
@@ -38,7 +38,7 @@
 #include "net_nfc_oem_controller.h"
 #include "net_nfc_typedef.h"
 #include "nfc_debug_private.h"
-#include "net_nfc_util_private.h"
+#include "net_nfc_util_internal.h"
 #include "net_nfc_util_ndef_message.h"
 #include "net_nfc_util_ndef_record.h"
 
@@ -161,19 +161,17 @@ typedef void * (*emul_Nfc_thread_handler_t)   (void * pParam);
 
 /***************************	STRUCTURE DEFINE START	***************************************/
 
-#define __USE_EPOLL_FOR_FILE__ 1
 
 
 /******************************             DEFINE START	*******************************************/
 
 /* for emulator management */
-#define NET_NFC_EMUL_DATA_PATH				"/dev"
-#define NET_NFC_EMUL_MESSAGE_FILE_NAME		"nfc0"
+#define NET_NFC_EMUL_DATA_PATH				"/opt/nfc"
+#define NET_NFC_EMUL_MESSAGE_FILE_NAME		"sdkMsg"
 #define NET_NFC_EMUL_MSG_ID_SEPERATOR			"\n:"
 #define NET_NFC_EMUL_MSG_DATA_SEPERATOR		"\n\0"
 #define NET_NFC_EMUL_MSG_RECORD_SEPERATOR	"\n,"
 #define NET_NFC_EMUL_TAG_DISCOVERED_DATA_FORMAT "%d,%d,%[^\n]"
-#define NET_NFC_EMUL_HEADER_LENGTH              8
 
 #ifdef __USE_EPOLL_FOR_FILE__
 #define EPOLL_SIZE 128
@@ -264,7 +262,7 @@ static bool net_nfc_emul_controller_llcp_activate_llcp (net_nfc_target_handle_s 
 static bool net_nfc_emul_controller_llcp_create_socket (net_nfc_llcp_socket_t* socket, net_nfc_socket_type_e socketType, uint16_t miu, uint8_t rw,  net_nfc_error_e* result, void * user_param);
 static bool net_nfc_emul_controller_llcp_bind(net_nfc_llcp_socket_t socket, uint8_t service_access_point, net_nfc_error_e* result);
 static bool net_nfc_emul_controller_llcp_listen(net_nfc_target_handle_s* handle, uint8_t* service_access_name, net_nfc_llcp_socket_t socket, net_nfc_error_e* result, void * user_param);
-static bool net_nfc_emul_controller_llcp_accept (net_nfc_llcp_socket_t socket, net_nfc_error_e* result);
+static bool net_nfc_emul_controller_llcp_accept (net_nfc_llcp_socket_t socket, net_nfc_error_e* result, void *user_param);
 static bool net_nfc_emul_controller_llcp_connect_by_url( net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t	socket, uint8_t* service_access_name, net_nfc_error_e* result, void * user_param);
 static bool net_nfc_emul_controller_llcp_connect(net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t	socket, uint8_t service_access_point, net_nfc_error_e* result, void * user_param);
 static bool net_nfc_emul_controller_llcp_reject(net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t	socket, net_nfc_error_e* result);
@@ -278,6 +276,15 @@ static bool net_nfc_emul_controller_llcp_get_remote_config (net_nfc_target_handl
 static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t socket, net_nfc_llcp_socket_option_s * option, net_nfc_error_e* result);
 
 static bool net_nfc_emul_controller_support_nfc(net_nfc_error_e *result);
+static bool net_nfc_emul_controller_secure_element_open(net_nfc_secure_element_type_e element_type,
+	net_nfc_target_handle_s **handle, net_nfc_error_e *result);
+static bool net_nfc_emul_controller_secure_element_get_atr(net_nfc_target_handle_s *handle,
+    data_s **atr, net_nfc_error_e *result);
+static bool net_nfc_emul_controller_secure_element_send_apdu(net_nfc_target_handle_s *handle,
+	data_s *command, data_s **response, net_nfc_error_e *result);
+static bool net_nfc_emul_controller_secure_element_close(net_nfc_target_handle_s *handle,
+	    net_nfc_error_e *result);
+
 
 /***************************	INTERFACE END	***************************************/
 
@@ -306,7 +313,7 @@ void __nfc_emul_util_free_mem (void** mem, char * filename, unsigned int line)
 {
 	if (mem == NULL || *mem == NULL)
 	{
-		DEBUG_MSG ("FILE: %s, LINE:%d, Invalid parameter in mem free util (pinter is NULL)", filename, line);
+		SECURE_LOGD ("FILE: %s, LINE:%d, Invalid parameter in mem free util (pinter is NULL)", filename, line);
 		return;
 	}
 	free(*mem);
@@ -317,7 +324,7 @@ void __nfc_emul_util_alloc_mem(void** mem, int size, char * filename, unsigned i
 {
 	if (mem == NULL || size <= 0)
 	{
-		DEBUG_MSG ("FILE: %s, LINE:%d, Invalid parameter in mem alloc util", filename, line);
+		SECURE_LOGD ("FILE: %s, LINE:%d, Invalid parameter in mem alloc util", filename, line);
 		return;
 	}
 
@@ -325,7 +332,7 @@ void __nfc_emul_util_alloc_mem(void** mem, int size, char * filename, unsigned i
 
 	if (*mem != NULL)
 	{
-		DEBUG_MSG("FILE: %s, LINE:%d, WARNING: Pointer is already allocated or it was not initialized with NULL", filename, line);
+		SECURE_LOGD("FILE: %s, LINE:%d, WARNING: Pointer is already allocated or it was not initialized with NULL", filename, line);
 	}
 
 	*mem = malloc (size);
@@ -336,7 +343,7 @@ void __nfc_emul_util_alloc_mem(void** mem, int size, char * filename, unsigned i
 	}
 	else
 	{
-		DEBUG_MSG("FILE: %s, LINE:%d, Allocation is failed", filename, line);
+		SECURE_LOGD("FILE: %s, LINE:%d, Allocation is failed", filename, line);
 	}
 }
 
@@ -463,6 +470,11 @@ NET_NFC_EXPORT_API bool onload(net_nfc_oem_interface_s* emul_interfaces)
 	emul_interfaces->get_remote_socket_info = net_nfc_emul_controller_llcp_get_remote_socket_info;
 
 	emul_interfaces->support_nfc = net_nfc_emul_controller_support_nfc;
+
+	emul_interfaces->secure_element_open = net_nfc_emul_controller_secure_element_open;
+	emul_interfaces->secure_element_get_atr = net_nfc_emul_controller_secure_element_get_atr;
+	emul_interfaces->secure_element_send_apdu = net_nfc_emul_controller_secure_element_send_apdu;
+	emul_interfaces->secure_element_close = net_nfc_emul_controller_secure_element_close;
 
 	DEBUG_EMUL_END();
 
@@ -761,8 +773,8 @@ static int _net_nfc_create_records_from_emulMsg(ndef_message_s **ndef_message, i
 #ifndef __EMUL_DEBUG__
 		DEBUG_ERR_MSG("RECORD DATA START >>>>>>>>>>>>>>>>>>>>>>>>");
 		DEBUG_MSG("TNF >>>>[%d]", record.tnf);
-		DEBUG_MSG("type_name >>>>[%s]", type_name);
-		DEBUG_MSG("record_id >>>>[%s]", record_id);
+		SECURE_LOGD("type_name >>>>[%s]", type_name);
+		SECURE_LOGD("record_id >>>>[%s]", record_id);
 		DEBUG_MSG("record_payload >>>>[%s]", record_payload);
 		DEBUG_ERR_MSG("RECORD DATA END >>>>>>>>>>>>>>>>>>>>>>>>");
 #endif
@@ -1023,7 +1035,6 @@ static bool _net_nfc_create_ndef_from_emulMsg(void)
 
 	}
 
-	net_nfc_util_free_ndef_message(ndef_message);
 	DEBUG_EMUL_END();
 
 	return retval;
@@ -1119,6 +1130,7 @@ static void _net_nfc_target_discovered_cb(void)
 	target_detected->devType = _net_nfc_emul_convert_target_type(gSdkMsg.target_type);
 	if (!target_detected->devType) {
 		DEBUG_MSG("target_detected->devType is unknown");
+		_nfc_emul_util_free_mem(target_detected);
 		return;
 	}
 
@@ -1149,6 +1161,9 @@ static void _net_nfc_target_discovered_cb(void)
 		DEBUG_MSG("discovered callback is called");
 		g_emul_controller_target_cb(target_detected, NULL);
 	}
+
+	_nfc_emul_util_free_mem(target_detected);
+
 	DEBUG_EMUL_END();
 }
 
@@ -1361,9 +1376,6 @@ static bool _net_nfc_make_llcp_data(void)
 		if (Snep_Server_msg.data->length <= SNEP_MAX_BUFFER) {
 			DEBUG_MSG("The snep msg size is small than SNEP_MAX_BUFFER >>>");
 
-			if (llcp_server_data == NULL)
-				return false;
-
 			llcp_server_data->length = Snep_Server_msg.data->length;
 			memcpy(llcp_server_data->buffer, Snep_Server_msg.data->buffer, Snep_Server_msg.data->length);
 		}
@@ -1513,7 +1525,7 @@ static void emul_ReaderThread(void * pArg)
 
 	/* make file name */
 	snprintf(file_name, sizeof(file_name), "%s/%s", NET_NFC_EMUL_DATA_PATH, NET_NFC_EMUL_MESSAGE_FILE_NAME );
-	DEBUG_MSG("file path : %s", file_name);
+	SECURE_LOGD("file path : %s", file_name);
 
 	/* open file for poll */
 	emulMsg_file_fd = open(file_name, O_RDONLY|O_NONBLOCK);
@@ -1593,8 +1605,7 @@ static void emul_ReaderThread(void * pArg)
 					DEBUG_MSG("message readcnt= [%d] ", readcnt);
 					DEBUG_MSG("message = [%s] ", readbuffer);
 
-                    /* remove header */
-					_net_nfc_process_emulMsg(readbuffer + NET_NFC_EMUL_HEADER_LENGTH, readcnt - NET_NFC_EMUL_HEADER_LENGTH);
+					_net_nfc_process_emulMsg(readbuffer, readcnt);
 				}
 				else
 				{
@@ -1631,14 +1642,21 @@ static void emul_ReaderThread(void * pArg)
 
 	FILE *fp = NULL;
 	char file_name[1024] = { 0, };
-	char *buf;
+
+	char readBuffer[READ_BUFFER_LENGTH_MAX];
+
 	struct stat st;
-	time_t last_mtime = 0;
+
+	time_t curTime;
+
 	bool condition = true;
 
 	/* make file name */
 	snprintf(file_name, sizeof(file_name), "%s/%s", NET_NFC_EMUL_DATA_PATH, NET_NFC_EMUL_MESSAGE_FILE_NAME );
-	DEBUG_MSG("file path : %s", file_name);
+	SECURE_LOGD("file path : %s", file_name);
+
+	time(&curTime);
+	DEBUG_MSG("Start Current Time [%ld]", (unsigned long) curTime);
 
 	/* polling 500 ms */
 
@@ -1647,54 +1665,43 @@ static void emul_ReaderThread(void * pArg)
 		usleep(500 * 1000);
 
 		/* open file */
-		fp = fopen(file_name, "r");
-		if (NULL == fp)
-		{
+		if ((fp = fopen(file_name, "r")) == NULL) {
 			DEBUG_MSG("file open error");
 			condition = false;
-			break;
 		}
+		else {
+			/* get the modified time of the file */
+			if (stat(file_name, &st) ==0) {
+				if ((unsigned long) st.st_mtime <= (unsigned long) curTime) {
+					fclose(fp);
+					continue;
+				}
+				else {
+					DEBUG_MSG("FILE Modified Time [%ld]", (unsigned long) st.st_mtime);
+					/* update current time */
+					time(&curTime);
+					DEBUG_MSG("Get New Current Time [%ld]", (unsigned long) curTime);
+				}
 
-		/* get the modified time of the file */
-		if (stat(file_name, &st) == 0) {
-			if (st.st_mtime == last_mtime) {
+			}
+			else {
+				DEBUG_MSG("stat error");
 				fclose(fp);
 				continue;
 			}
-		} else {
-			DEBUG_MSG("stat error");
-			fclose(fp);
-			continue;
-		}
 
-		/* read data */
-		if (fscanf(fp, "%a[^\n]", &buf))
-		{
-			if (buf)
-			{
-				DEBUG_MSG("get DATA >>>> buf [%s]", buf);
+			/* read data */
+			memset(readBuffer, 0x00, READ_BUFFER_LENGTH_MAX);
 
-				if (last_mtime)
-				{
-					_net_nfc_process_emulMsg((uint8_t*) buf, (long int) strlen(buf));
-				}
-				else
-				{
-					// EMUL_NFC_TAG_DISCOVERED, EMUL_NFC_P2P_DISCOVERED
-					if ('1'==buf[0] && '0'==buf[1] && ('0'==buf[2] || '2'==buf[2]))
-						_net_nfc_process_emulMsg((uint8_t*)buf, (long int) strlen(buf));
-				}
-
-				/* process message */
-				free(buf);
+			if (fscanf(fp, "%[^\n]", readBuffer)) {
+				DEBUG_MSG("get DATA >>>> readBuffer [%s]", readBuffer);
 			}
+
+			/* process message */
+			_net_nfc_process_emulMsg((uint8_t *) readBuffer, (long int) strlen(readBuffer));
+
+			fclose(fp);
 		}
-
-		DEBUG_MSG("FILE Modified Time [%ld]", (unsigned long) st.st_mtime);
-		DEBUG_MSG("Last FILE Modified Time [%ld]", (unsigned long) last_mtime);
-		last_mtime = st.st_mtime;
-
-		fclose(fp);
 
 		DEBUG_MSG("LOOP END >>>>");
 
@@ -1744,9 +1751,20 @@ static bool _net_nfc_emul_controller_create_interfaceFile (void)
 
 	DEBUG_EMUL_BEGIN();
 
+	/* create folder */
+	if (stat(NET_NFC_EMUL_DATA_PATH, &st) != 0){
+		if(mkdir(NET_NFC_EMUL_DATA_PATH, 0777) != 0){
+			DEBUG_MSG("create folder is failed");
+			return false;
+		}
+	}
+	else{
+		DEBUG_MSG("folder is already created");
+	}
+
 	/* create file */
 	snprintf(file_name, sizeof(file_name), "%s/%s", NET_NFC_EMUL_DATA_PATH, NET_NFC_EMUL_MESSAGE_FILE_NAME );
-	DEBUG_MSG("file path : %s", file_name);
+	SECURE_LOGD("file path : %s", file_name);
 
 	if (stat(file_name, &st) == 0) {
 		DEBUG_MSG("file is already created");
@@ -1822,6 +1840,7 @@ static bool net_nfc_emul_controller_init (net_nfc_error_e* result)
 	DEBUG_MSG("Stack init finished");
 
 	g_stack_init_successful = true;
+	*result = NET_NFC_OK;
 
 	DEBUG_EMUL_END();
 
@@ -1958,6 +1977,15 @@ static bool net_nfc_emul_controller_configure_discovery (net_nfc_discovery_mode_
 
 	*result = NET_NFC_OK;
 
+	if (mode == NET_NFC_DISCOVERY_MODE_START)
+	{
+		mode = NET_NFC_DISCOVERY_MODE_CONFIG;
+	}
+	else if (mode == NET_NFC_DISCOVERY_MODE_STOP)
+	{
+		mode = NET_NFC_DISCOVERY_MODE_CONFIG;
+		config = NET_NFC_ALL_DISABLE;
+	}
 
 	DEBUG_EMUL_BEGIN();
 
@@ -2522,7 +2550,7 @@ static bool net_nfc_emul_controller_llcp_listen(net_nfc_target_handle_s* handle,
 
 	/* Emul don't create real socket. So, we don't need to wait accept from remote socket */
 	/* In here, send accept event for only snep */
-	net_nfc_request_accept_socket_t * detail = NULL;
+	net_nfc_request_listen_socket_t *detail = NULL;
 
 	socket_info_s *socket_info = _net_nfc_find_server_socket(socket);
 	if (socket_info == NULL) {
@@ -2538,17 +2566,17 @@ static bool net_nfc_emul_controller_llcp_listen(net_nfc_target_handle_s* handle,
 	}
 
 	if (llcp_state == NET_NFC_STATE_EXCHANGER_SERVER) {
-		_nfc_emul_util_alloc_mem(detail, sizeof(net_nfc_request_accept_socket_t));
+		_nfc_emul_util_alloc_mem(detail, sizeof(*detail));
 
 		if(detail != NULL)
 		{
-			detail->length = sizeof(net_nfc_request_accept_socket_t);
-			detail->request_type = NET_NFC_MESSAGE_SERVICE_LLCP_ACCEPT;
+			detail->length = sizeof(*detail);
+			detail->request_type = NET_NFC_MESSAGE_SERVICE_LLCP_LISTEN;
 
 			socket_info->user_context = user_param;
 
 			detail->handle = handle;
-			detail->incomming_socket = NET_NFC_EMUL_INCOMING_SOCKET_NUMBER;
+			detail->client_socket = NET_NFC_EMUL_INCOMING_SOCKET_NUMBER;
 			detail->trans_param = socket_info->user_context;
 			detail->result = NET_NFC_OK;
 
@@ -2566,7 +2594,7 @@ static bool net_nfc_emul_controller_llcp_listen(net_nfc_target_handle_s* handle,
 }
 
 /* below accept function does not used. */
-static bool net_nfc_emul_controller_llcp_accept(net_nfc_llcp_socket_t	socket, net_nfc_error_e* result)
+static bool net_nfc_emul_controller_llcp_accept(net_nfc_llcp_socket_t	socket, net_nfc_error_e* result, void *user_param)
 {
 	if (result == NULL) {
 		return false;
@@ -3072,6 +3100,7 @@ static bool net_nfc_emul_controller_llcp_recv_from(net_nfc_target_handle_s* hand
 			resp_msg = _net_nfc_llcp_snep_create_msg(SNEP_RESP_CONT, NULL);
 			if (resp_msg == NULL || resp_msg->buffer == NULL) {
 				DEBUG_ERR_MSG("create snep msg is failed >>>");
+				_nfc_emul_util_free_mem(resp_msg);
 				return false;
 			}
 
@@ -3086,6 +3115,7 @@ static bool net_nfc_emul_controller_llcp_recv_from(net_nfc_target_handle_s* hand
 			resp_msg = _net_nfc_llcp_snep_create_msg(SNEP_RESP_SUCCESS, NULL);
 			if (resp_msg == NULL || resp_msg->buffer == NULL) {
 				DEBUG_ERR_MSG("create snep msg is failed >>>");
+				_nfc_emul_util_free_mem(resp_msg);
 				return false;
 			}
 
@@ -3220,9 +3250,6 @@ static bool net_nfc_emul_controller_llcp_get_remote_config (net_nfc_target_handl
 
 static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_handle_s* handle, net_nfc_llcp_socket_t socket, net_nfc_llcp_socket_option_s * option, net_nfc_error_e* result)
 {
-	/* In llcp specification ver 1.1, default miu size is 128 */
-	const uint16_t default_miu = 128;
-
 	if (result == NULL) {
 		return false;
 	}
@@ -3236,8 +3263,6 @@ static bool net_nfc_emul_controller_llcp_get_remote_socket_info (net_nfc_target_
 
 	DEBUG_EMUL_BEGIN();
 
-	option->miu = default_miu;
-
 	DEBUG_EMUL_END();
 
 	return true;
@@ -3249,22 +3274,110 @@ static bool net_nfc_emul_controller_support_nfc(net_nfc_error_e *result)
 	bool ret = false;
 	struct stat st = { 0, };
 
-	if (result == NULL)
+	if (stat("/opt/nfc/", &st) == -1)
 	{
+		if (result)
+			*result = NET_NFC_NOT_SUPPORTED;
 		return ret;
 	}
 
-	if (stat("/opt/nfc/sdkMsg", &st) == 0)
-	{
+	if (result)
 		*result = NET_NFC_OK;
-		ret = true;
-	}
-	else
-	{
-		*result = NET_NFC_NOT_SUPPORTED;
-	}
+
+	ret = true;
 
 	return ret;
+}
+static bool net_nfc_emul_controller_secure_element_open(net_nfc_secure_element_type_e element_type, net_nfc_target_handle_s **handle, net_nfc_error_e *result)
+{
+	DEBUG_ERR_MSG("se open start");
+	*result = NET_NFC_OK;
+	__net_nfc_make_valid_target_handle(handle);
+
+	DEBUG_ERR_MSG("se_open end");
+	return true;
+}
+static bool net_nfc_emul_controller_secure_element_get_atr(net_nfc_target_handle_s *handle,
+		    data_s **atr, net_nfc_error_e *result)
+{
+	bool ret = true;
+	char buffer[1024];
+	int length = sizeof(buffer);
+	data_s *temp;
+
+	DEBUG_ERR_MSG("se get_atr start");
+	*result = NET_NFC_OK;
+	*atr = NULL;
+
+	strcpy(buffer, "getatr");
+
+    temp = (data_s *)calloc(1, sizeof(*temp));
+    if (temp != NULL) {
+	    temp->buffer = (uint8_t *)calloc(1, length);
+        if (temp->buffer != NULL) {
+	        memcpy(temp->buffer, buffer, length);
+	        temp->length = length;
+            *atr = temp;
+	        *result = NET_NFC_OK;
+		} else {
+			free(temp);
+			*result = NET_NFC_ALLOC_FAIL;
+			ret = false;
+		}
+	} else {
+		*result = NET_NFC_ALLOC_FAIL;
+		ret = false;
+	}
+	DEBUG_ERR_MSG("se get atr end");
+	return ret;
+}
+static bool net_nfc_emul_controller_secure_element_send_apdu(net_nfc_target_handle_s *handle,
+		    data_s *command, data_s **response, net_nfc_error_e *result)
+{
+	bool ret = true;
+	char buffer[1024];
+	int length;
+	data_s *temp;
+
+	DEBUG_ERR_MSG("se send apdu start");
+
+	*result = NET_NFC_OK;
+	*response = NULL;
+
+	//buffer response
+	strcpy(buffer, "response");
+
+	length = strlen(buffer);
+
+    temp = (data_s *)calloc(1, sizeof(*temp));
+	if (temp != NULL) {
+		temp->buffer = (uint8_t *)calloc(1, length);
+		if (temp->buffer != NULL) {
+			memcpy(temp->buffer, buffer, length);
+			temp->length = length;
+
+			*response = temp;
+			*result = NET_NFC_OK;
+		} else {
+			free(temp);
+			*result = NET_NFC_ALLOC_FAIL;
+			ret = false;
+		}
+	} else {
+	    *result = NET_NFC_ALLOC_FAIL;
+	    ret = false;
+	}
+
+	DEBUG_ERR_MSG("se send apdu end");
+	return ret;
+}
+static bool net_nfc_emul_controller_secure_element_close(net_nfc_target_handle_s *handle,
+		        net_nfc_error_e *result)
+{
+	DEBUG_ERR_MSG("se close start");
+	*result = NET_NFC_OK;
+	return true;
+	DEBUG_ERR_MSG("se close end");
 }
 
 ////////////// INTERFACE END //////////

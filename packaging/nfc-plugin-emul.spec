@@ -1,6 +1,6 @@
 Name:       nfc-plugin-emul
 Summary:    NFC emul plugin
-Version:    0.0.14
+Version:    0.0.12
 Release:    0
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0
@@ -21,24 +21,23 @@ NFC Plugin Emul
 
 
 %build
-%cmake .
+cmake . -DCMAKE_INSTALL_PREFIX=%{_prefix}
 
+make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
-mkdir -p %{buildroot}/usr/share/license
-cp -af LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
-
 %make_install
 
-
-%post -p /sbin/ldconfig
+install -D -m 0644 LICENSE.Apache-2.0  %{buildroot}/%{_datadir}/license/nfc-plugin-emul
 
 
 %postun -p /sbin/ldconfig
 
+%post -p /sbin/ldconfig
 
 %files
 %defattr(-,root,root,-)
-%{_libdir}/*.so
-/usr/share/license/%{name}
+%{_libdir}/nfc/libnfc-plugin.so
+%{_datadir}/license/nfc-plugin-emul
+
