@@ -23,7 +23,7 @@ ENDFOREACH(flag)
 # this for NFC flag
 
 SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} -fno-strict-aliasing -pipe -fomit-frame-pointer -Wall -Wno-trigraphs -Werror-implicit-function-declaration -Wl,-zdefs -fvisibility=hidden")
-SET(ARM_CFLAGS "${ARM_CFLAGS} -mapcs -mno-sched-prolog -mabi=aapcs-linux -mno-thumb-interwork -msoft-float -Uarm -fno-common -fpic")
+SET(ARM_CFLAGS "${ARM_CFLAGS} -mapcs -mno-sched-prolog -mabi=aapcs-linux -Uarm -fno-common -fpic")
 
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror-implicit-function-declaration -Wl,--unresolved-symbols=ignore-in-shared-libs")
 
@@ -32,10 +32,9 @@ SET(CMAKE_C_FLAGS_DEBUG "-O0 -g")
 #SET(CMAKE_C_FLAGS_RELEASE "-O2")
 
 ADD_DEFINITIONS("-DPREFIX=\"${CMAKE_INSTALL_PREFIX}\"")
-ADD_DEFINITIONS("-DUSE_GLIB_MAIN_LOOP")
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRCS})
 
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${pkgs_LDFLAGS} "-ldl")
 
-INSTALL(TARGETS ${PROJECT_NAME} DESTINATION lib)
+INSTALL(TARGETS ${PROJECT_NAME} DESTINATION lib/nfc)

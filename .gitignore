@@ -1,0 +1,15 @@
+.project
+.cproject
+*-stamp
+cmake_tmp
+debian/libnfc-plugin-emul-0
+debian/libnfc-plugin-emul-dbg
+debian/libnfc-plugin-emul-dev
+debian/tmp
+debian/*.postinst
+debian/*.install
+debian/*.log
+debian/*.substvars
+debian/*.debhelper
+debian/files
+gbs_temp

@@ -1,26 +1,14 @@
 Name:       nfc-plugin-emul
 Summary:    NFC emul plugin
-Version:    0.0.2
-Release:    2
+Version:    0.0.14
+Release:    0
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
-BuildRequires: pkgconfig(aul)
 BuildRequires: pkgconfig(glib-2.0)
 BuildRequires: pkgconfig(gobject-2.0)
-BuildRequires: pkgconfig(syspopup)
-BuildRequires: pkgconfig(dbus-glib-1)
 BuildRequires: pkgconfig(vconf)
 BuildRequires: pkgconfig(dlog)
-BuildRequires: pkgconfig(tapi)
-BuildRequires: pkgconfig(ecore)
-BuildRequires: pkgconfig(elementary)
-BuildRequires: pkgconfig(mm-common)
-BuildRequires: pkgconfig(mm-sound)
-BuildRequires: pkgconfig(security-server)
-BuildRequires: pkgconfig(contacts-service)
-BuildRequires: pkgconfig(dlog)
-BuildRequires: pkgconfig(memo)
 BuildRequires: pkgconfig(nfc-common-lib)
 BuildRequires: cmake
 BuildRequires: gettext-tools
@@ -41,24 +29,15 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 
-
-%postun
-/sbin/ldconfig
-rm -f build-stamp configure-stamp
-cd cmake_tmp
-rm -rf $(CMAKE_TMP_DIR)
-rm -rf CMakeCache.txt
-rm -rf CMakeFiles
-rm -rf cmake_install.cmake
-rm -rf Makefile
-rm -rf install_manifest.txt
-rm -rf *.so
-
-%post
+install -D -m 0644 LICENSE.Apache-2.0  %{buildroot}/%{_datadir}/license/nfc-plugin-emul
 
 
+%postun -p /sbin/ldconfig
+
+%post -p /sbin/ldconfig
 
 %files
 %defattr(-,root,root,-)
-%{_libdir}/*.so
+%{_libdir}/nfc/libnfc-plugin.so
+%{_datadir}/license/nfc-plugin-emul
 
